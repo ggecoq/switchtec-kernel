@@ -163,6 +163,7 @@ static void mrpc_cmd_submit(struct switchtec_dev *stdev)
 	memcpy_toio(&stdev->mmio_mrpc->input_data,
 		    stuser->data, stuser->data_len);
 	flush_wc_buf(stdev);
+	dev_dbg(&stuser->stdev->dev, "tag : %d\n", stdev->tag);
 	stuser->cmd = (stdev->tag << 17) | stuser->cmd;
 	iowrite32(stuser->cmd, &stdev->mmio_mrpc->cmd);
 	stdev->tag++;
@@ -193,8 +194,10 @@ static void mrpc_complete_cmd(struct switchtec_dev *stdev)
 	/* requires the mrpc_mutex to already be held when called */
 	struct switchtec_user *stuser;
 
-	if (list_empty(&stdev->mrpc_queue))
+	if (list_empty(&stdev->mrpc_queue)) {
+		dev_dbg(&stdev->dev, "@@@ mrpc_complete_cmd list empty\n");
 		return;
+	}
 
 	stuser = list_entry(stdev->mrpc_queue.next, struct switchtec_user,
 			    list);
@@ -204,8 +207,10 @@ static void mrpc_complete_cmd(struct switchtec_dev *stdev)
 	else
 		stuser->status = ioread32(&stdev->mmio_mrpc->status);
 
-	if (stuser->status == SWITCHTEC_MRPC_STATUS_INPROGRESS)
+	if (stuser->status == SWITCHTEC_MRPC_STATUS_INPROGRESS) {
+		dev_dbg(&stuser->stdev->dev, "@@@ mrpc_complete_cmd INPROGRESS\n");
 		return;
+	}
 
 	stuser_set_state(stuser, MRPC_DONE);
 	stuser->return_code = 0;
