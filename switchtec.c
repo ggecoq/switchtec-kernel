@@ -163,7 +163,9 @@ static void mrpc_cmd_submit(struct switchtec_dev *stdev)
 	memcpy_toio(&stdev->mmio_mrpc->input_data,
 		    stuser->data, stuser->data_len);
 	flush_wc_buf(stdev);
+	stuser->cmd = (stdev->tag << 17) | stuser->cmd;
 	iowrite32(stuser->cmd, &stdev->mmio_mrpc->cmd);
+	stdev->tag++;
 
 	schedule_delayed_work(&stdev->mrpc_timeout,
 			      msecs_to_jiffies(500));
