@@ -420,6 +420,7 @@ struct switchtec_dev {
 
 	struct dma_mrpc_output *dma_mrpc;
 	dma_addr_t dma_mrpc_dma_addr;
+	int tag;
 };
 
 static inline struct switchtec_dev *to_stdev(struct device *dev)
