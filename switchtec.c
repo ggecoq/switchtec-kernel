@@ -280,6 +280,42 @@ out:
 	mutex_unlock(&stdev->mrpc_mutex);
 }
 
+static ssize_t dma_status_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct switchtec_dev *stdev = to_stdev(dev);
+
+	return sprintf(buf, "%x\n", stdev->dma_mrpc->status);
+}
+static DEVICE_ATTR_RO(dma_status);
+
+static ssize_t dma_id_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct switchtec_dev *stdev = to_stdev(dev);
+
+	return sprintf(buf, "%x\n", stdev->dma_mrpc->cmd_id);
+}
+static DEVICE_ATTR_RO(dma_id);
+
+static ssize_t dma_rcode_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct switchtec_dev *stdev = to_stdev(dev);
+
+	return sprintf(buf, "%x\n", stdev->dma_mrpc->rtn_code);
+}
+static DEVICE_ATTR_RO(dma_rcode);
+
+static ssize_t dma_size_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct switchtec_dev *stdev = to_stdev(dev);
+
+	return sprintf(buf, "%x\n", stdev->dma_mrpc->output_size);
+}
+static DEVICE_ATTR_RO(dma_size);
+
 static ssize_t device_version_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
@@ -387,6 +423,10 @@ static struct attribute *switchtec_device_attrs[] = {
 	&dev_attr_component_revision.attr,
 	&dev_attr_partition.attr,
 	&dev_attr_partition_count.attr,
+	&dev_attr_dma_status.attr,
+	&dev_attr_dma_id.attr,
+	&dev_attr_dma_rcode.attr,
+	&dev_attr_dma_size.attr,
 	NULL,
 };
 
