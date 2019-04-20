@@ -25,6 +25,7 @@
 #include <linux/poll.h>
 #include <linux/wait.h>
 #include <linux/io-64-nonatomic-lo-hi.h>
+#include <linux/delay.h>
 
 #include "version.h"
 MODULE_DESCRIPTION("Microsemi Switchtec(tm) PCIe Management Driver");
@@ -209,7 +210,20 @@ static void mrpc_complete_cmd(struct switchtec_dev *stdev)
 
 	if (stuser->status == SWITCHTEC_MRPC_STATUS_INPROGRESS) {
 		dev_dbg(&stuser->stdev->dev, "@@@ mrpc_complete_cmd INPROGRESS\n");
-		return;
+		//return;
+		msleep(1000*20);
+		if (stuser->status == SWITCHTEC_MRPC_STATUS_INPROGRESS) {
+			dev_dbg(&stuser->stdev->dev, "@@@ mrpc_complete_cmd lost\n");
+			stdev->sum_lo++;
+		}
+		else if (stuser->status == SWITCHTEC_MRPC_STATUS_DONE) {
+			dev_dbg(&stuser->stdev->dev, "@@@ mrpc_complete_cmd reord\n");
+			stdev->sum_ro++;
+		}
+		else {
+			dev_dbg(&stuser->stdev->dev, "@@@ mrpc_complete_cmd other: %x\n", stuser->status);
+			stdev->sum_oth++;
+		}
 	}
 
 	stuser_set_state(stuser, MRPC_DONE);
@@ -279,6 +293,42 @@ static void mrpc_timeout_work(struct work_struct *work)
 out:
 	mutex_unlock(&stdev->mrpc_mutex);
 }
+
+static ssize_t sum_ro_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct switchtec_dev *stdev = to_stdev(dev);
+
+	return sprintf(buf, "%x\n", stdev->sum_ro);
+}
+static DEVICE_ATTR_RO(sum_ro);
+
+static ssize_t sum_lo_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct switchtec_dev *stdev = to_stdev(dev);
+
+	return sprintf(buf, "%x\n", stdev->sum_lo);
+}
+static DEVICE_ATTR_RO(sum_lo);
+
+static ssize_t sum_oth_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct switchtec_dev *stdev = to_stdev(dev);
+
+	return sprintf(buf, "%x\n", stdev->sum_oth);
+}
+static DEVICE_ATTR_RO(sum_oth);
+
+static ssize_t tag_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct switchtec_dev *stdev = to_stdev(dev);
+
+	return sprintf(buf, "%x\n", stdev->tag);
+}
+static DEVICE_ATTR_RO(tag);
 
 static ssize_t dma_status_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -427,6 +477,10 @@ static struct attribute *switchtec_device_attrs[] = {
 	&dev_attr_dma_id.attr,
 	&dev_attr_dma_rcode.attr,
 	&dev_attr_dma_size.attr,
+	&dev_attr_tag.attr,
+	&dev_attr_sum_ro.attr,
+	&dev_attr_sum_lo.attr,
+	&dev_attr_sum_oth.attr,
 	NULL,
 };
 
@@ -1211,6 +1265,11 @@ static struct switchtec_dev *stdev_create(struct pci_dev *pdev)
 	cdev_init(cdev, &switchtec_fops);
 	cdev->owner = THIS_MODULE;
 	cdev->kobj.parent = &dev->kobj;
+
+	stdev->tag = 0;
+	stdev->sum_ro = 0;
+	stdev->sum_lo = 0;
+	stdev->sum_oth = 0;
 
 	return stdev;
 
