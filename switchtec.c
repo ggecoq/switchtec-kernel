@@ -170,7 +170,7 @@ static void mrpc_cmd_submit(struct switchtec_dev *stdev)
 	stdev->tag++;
 
 	schedule_delayed_work(&stdev->mrpc_timeout,
-			      msecs_to_jiffies(500));
+			      msecs_to_jiffies(2000));
 }
 
 static int mrpc_queue_cmd(struct switchtec_user *stuser)
@@ -275,6 +275,7 @@ static void mrpc_timeout_work(struct work_struct *work)
 
 	stdev = container_of(work, struct switchtec_dev, mrpc_timeout.work);
 
+	stdev->sum_to++;
 	dev_dbg(&stdev->dev, "%s\n", __func__);
 
 	mutex_lock(&stdev->mrpc_mutex);
@@ -285,7 +286,7 @@ static void mrpc_timeout_work(struct work_struct *work)
 		status = ioread32(&stdev->mmio_mrpc->status);
 	if (status == SWITCHTEC_MRPC_STATUS_INPROGRESS) {
 		schedule_delayed_work(&stdev->mrpc_timeout,
-				      msecs_to_jiffies(500));
+				      msecs_to_jiffies(2000));
 		goto out;
 	}
 
@@ -293,6 +294,15 @@ static void mrpc_timeout_work(struct work_struct *work)
 out:
 	mutex_unlock(&stdev->mrpc_mutex);
 }
+
+static ssize_t sum_to_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct switchtec_dev *stdev = to_stdev(dev);
+
+	return sprintf(buf, "%x\n", stdev->sum_to);
+}
+static DEVICE_ATTR_RO(sum_to);
 
 static ssize_t sum_ro_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -481,6 +491,7 @@ static struct attribute *switchtec_device_attrs[] = {
 	&dev_attr_sum_ro.attr,
 	&dev_attr_sum_lo.attr,
 	&dev_attr_sum_oth.attr,
+	&dev_attr_sum_to.attr,
 	NULL,
 };
 
@@ -1270,6 +1281,7 @@ static struct switchtec_dev *stdev_create(struct pci_dev *pdev)
 	stdev->sum_ro = 0;
 	stdev->sum_lo = 0;
 	stdev->sum_oth = 0;
+	stdev->sum_to = 0;
 
 	return stdev;
 

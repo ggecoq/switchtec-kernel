@@ -427,6 +427,7 @@ struct switchtec_dev {
 	int sum_ro;
 	int sum_lo;
 	int sum_oth;
+	int sum_to;
 };
 
 static inline struct switchtec_dev *to_stdev(struct device *dev)
