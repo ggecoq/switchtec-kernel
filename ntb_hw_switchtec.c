@@ -724,6 +724,7 @@ static int switchtec_ntb_peer_db_set(struct ntb_dev *ntb, u64 db_bits)
 	iowrite64(db_bits << sndev->db_peer_shift,
 		  &sndev->mmio_peer_dbmsg->odb);
 
+	dev_dbg(&sndev->stdev->dev, "db %p, bit %llx\n", &sndev->mmio_peer_dbmsg->odb, db_bits << sndev->db_peer_shift);
 	return 0;
 }
 
