@@ -163,7 +163,8 @@ static void mrpc_cmd_submit(struct switchtec_dev *stdev)
 	stdev->mrpc_busy = 1;
 	memcpy_toio(&stdev->mmio_mrpc->input_data,
 		    stuser->data, stuser->data_len);
-	flush_wc_buf(stdev);
+	//flush_wc_buf(stdev);
+	wmb();
 	dev_dbg(&stuser->stdev->dev, "tag : %d\n", stdev->tag);
 	stuser->cmd = (stdev->tag << 17) | stuser->cmd;
 	iowrite32(stuser->cmd, &stdev->mmio_mrpc->cmd);
@@ -210,7 +211,9 @@ static void mrpc_complete_cmd(struct switchtec_dev *stdev)
 
 	if (stuser->status == SWITCHTEC_MRPC_STATUS_INPROGRESS) {
 		dev_dbg(&stuser->stdev->dev, "@@@ mrpc_complete_cmd INPROGRESS\n");
-		//return;
+		stdev->sum_lo++;
+		flush_wc_buf(stdev);
+		return;
 		msleep(1000*20);
 		if (stuser->status == SWITCHTEC_MRPC_STATUS_INPROGRESS) {
 			dev_dbg(&stuser->stdev->dev, "@@@ mrpc_complete_cmd lost\n");
