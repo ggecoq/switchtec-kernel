@@ -138,6 +138,15 @@ static void flush_wc_buf(struct switchtec_dev *stdev)
 	ioread32(&mmio_dbmsg->odb);
 }
 
+static void idb_mask(struct switchtec_dev *stdev)
+{
+	struct ntb_dbmsg_regs __iomem *mmio_dbmsg;
+
+	mmio_dbmsg = (void __iomem *)stdev->mmio_ntb +
+		SWITCHTEC_NTB_REG_DBMSG_OFFSET;
+	writeq(0, &mmio_dbmsg->idb_mask);
+}
+
 static void mrpc_cmd_submit(struct switchtec_dev *stdev)
 {
 	/* requires the mrpc_mutex to already be held when called */
@@ -203,6 +212,7 @@ static void mrpc_complete_cmd(struct switchtec_dev *stdev)
 		stuser->status = ioread32(&stdev->mmio_mrpc->status);
 
 	if (stuser->status == SWITCHTEC_MRPC_STATUS_INPROGRESS) {
+		idb_mask(stdev);
 		flush_wc_buf(stdev);
 		return;
 	}
