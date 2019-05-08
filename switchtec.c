@@ -25,6 +25,7 @@
 #include <linux/poll.h>
 #include <linux/wait.h>
 #include <linux/io-64-nonatomic-lo-hi.h>
+#include <linux/delay.h>
 
 #include "version.h"
 MODULE_DESCRIPTION("Microsemi Switchtec(tm) PCIe Management Driver");
@@ -40,6 +41,11 @@ static bool use_dma_mrpc = 1;
 module_param(use_dma_mrpc, bool, 0644);
 MODULE_PARM_DESC(use_dma_mrpc,
 		 "Enable the use of the DMA MRPC feature");
+
+static int msecs = 1000;
+module_param(msecs, int, 0644);
+MODULE_PARM_DESC(msecs,
+		 "Milliseconds delay");
 
 static dev_t switchtec_devt;
 static DEFINE_IDA(switchtec_minor_ida);
@@ -214,6 +220,7 @@ static void mrpc_complete_cmd(struct switchtec_dev *stdev)
 	if (stuser->status == SWITCHTEC_MRPC_STATUS_INPROGRESS) {
 		idb_mask(stdev);
 		//flush_wc_buf(stdev);
+		mdelay(msecs);
 		ioread32(&stdev->mmio_sys_info->device_id);
 		return;
 	}
