@@ -1243,7 +1243,7 @@ static void switchtec_ntb_init_db(struct switchtec_ntb *sndev)
 		sndev->db_valid_mask = 0x0FFFFFFF;
 	}
 
-	iowrite64(sndev->db_mask, &sndev->mmio_self_dbmsg->idb_mask);
+	iowrite64(~sndev->db_mask, &sndev->mmio_self_dbmsg->idb_mask);
 	iowrite64(sndev->db_valid_mask << sndev->db_peer_shift,
 		  &sndev->mmio_peer_dbmsg->odb_mask);
 
