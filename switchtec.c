@@ -218,9 +218,10 @@ static void mrpc_complete_cmd(struct switchtec_dev *stdev)
 		stuser->status = ioread32(&stdev->mmio_mrpc->status);
 
 	if (stuser->status == SWITCHTEC_MRPC_STATUS_INPROGRESS) {
-		idb_mask(stdev);
 		//flush_wc_buf(stdev);
 		mdelay(msecs);
+		iowrite32(stuser->cmd, &stdev->mmio_mrpc->cmd);
+		idb_mask(stdev);
 		ioread32(&stdev->mmio_sys_info->device_id);
 		return;
 	}
