@@ -125,6 +125,8 @@ struct switchtec_ntb {
 	enum ntb_width link_width;
 	struct work_struct check_link_status_work;
 	bool link_force_down;
+
+	struct kobject kobj;
 };
 
 static struct switchtec_ntb *ntb_sndev(struct ntb_dev *ntb)
@@ -1548,6 +1550,115 @@ static int switchtec_ntb_reinit_peer(struct switchtec_ntb *sndev)
 	return rc;
 }
 
+struct ntb_sysfs_entry {
+	struct attribute attr;
+	ssize_t (*show)(struct switchtec_ntb *, char *);
+	ssize_t (*store)(struct switchtec_ntb *, const char *, size_t);
+};
+
+static ssize_t requester_ids_show(struct switchtec_ntb *sndev, char *page)
+{
+	u32 perf_cfg = 0;
+
+	return sprintf(page, "0x%x\n", perf_cfg);
+}
+
+static ssize_t requester_ids_store(struct switchtec_ntb *sndev, const char *page,
+				 size_t count)
+{
+	int bus, dev, func;
+	int req_id;
+	ssize_t ret;
+
+	if (sscanf(page, "%x:%x.%x", &bus, &dev, &func) != 3)
+		return -EINVAL;
+
+	if (bus > 0xff || dev > 0x1f || func > 8)
+		ret = -EINVAL;
+
+	req_id = (bus < 8) | (dev < 5) | func;
+
+	ret = config_req_id_table(sndev, sndev->mmio_self_ctrl, &req_id, 1);
+	if (ret)
+		return ret;
+
+	if (crosslink_is_enabled(sndev)) {
+		ret = crosslink_setup_req_ids(sndev, sndev->mmio_peer_ctrl);
+		if (ret)
+			return ret;
+	}
+
+	return count;
+}
+struct ntb_sysfs_entry requester_ids_attr = __ATTR_RW(requester_ids);
+
+static ssize_t switchtec_ntb_attr_show(struct kobject *kobj,
+				       struct attribute *attr, char *page)
+{
+	struct ntb_sysfs_entry *entry;
+	struct switchtec_ntb *sndev;
+
+	entry = container_of(attr, struct ntb_sysfs_entry, attr);
+	sndev = container_of(kobj, struct switchtec_ntb, kobj);
+
+	if (!entry->show)
+		return -EIO;
+	return entry->show(sndev, page);
+}
+
+static ssize_t switchtec_ntb_attr_store(struct kobject *kobj,
+					struct attribute *attr,
+					const char *page, size_t count)
+{
+	struct ntb_sysfs_entry *entry;
+	struct switchtec_ntb *sndev;
+
+	entry = container_of(attr, struct ntb_sysfs_entry, attr);
+	sndev = container_of(kobj, struct switchtec_ntb, kobj);
+
+	if (!entry->store)
+		return -EIO;
+	return entry->store(sndev, page, count);
+}
+
+static struct sysfs_ops switchtec_ntb_sysfs_ops = {
+	.show   = switchtec_ntb_attr_show,
+	.store  = switchtec_ntb_attr_store,
+};
+
+static struct attribute *switchtec_ntb_attrs[] = {
+	&requester_ids_attr.attr,
+	NULL,
+};
+
+static struct kobj_type switchtec_ntb_ktype = {
+	.sysfs_ops = &switchtec_ntb_sysfs_ops,
+	.default_attrs = switchtec_ntb_attrs,
+};
+
+static void switchtec_ntb_init_sysfs(struct switchtec_ntb *sndev)
+{
+	struct kobject *parent;
+	int err;
+
+	parent = &sndev->stdev->dev.kobj;
+	err = kobject_init_and_add(&sndev->kobj, &switchtec_ntb_ktype, parent,
+				   "ntb");
+	if (err) {
+		dev_warn(&sndev->stdev->dev,
+			 "sysfs ntb init error (%d)\n", err);
+		kobject_put(&sndev->kobj);
+	}
+}
+
+static void switchtec_ntb_deinit_sysfs(struct switchtec_ntb *sndev)
+{
+	if (sndev->kobj.state_initialized) {
+		kobject_del(&sndev->kobj);
+		kobject_put(&sndev->kobj);
+	}
+}
+
 static int switchtec_ntb_add(struct device *dev,
 			     struct class_interface *class_intf)
 {
@@ -1590,6 +1701,8 @@ static int switchtec_ntb_add(struct device *dev,
 	if (rc)
 		goto deinit_shared_and_exit;
 
+	switchtec_ntb_init_sysfs(sndev);
+
 	/*
 	 * If this host crashed, the other host may think the link is
 	 * still up. Tell them to force it down (it will go back up
@@ -1631,6 +1744,7 @@ static void switchtec_ntb_remove(struct device *dev,
 	stdev->link_notifier = NULL;
 	stdev->sndev = NULL;
 	ntb_unregister_device(&sndev->ntb);
+	switchtec_ntb_deinit_sysfs(sndev);
 	switchtec_ntb_deinit_db_msg_irq(sndev);
 	switchtec_ntb_deinit_shared_mw(sndev);
 	switchtec_ntb_deinit_crosslink(sndev);
