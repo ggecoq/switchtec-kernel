@@ -996,30 +996,58 @@ static int config_req_id_table(struct switchtec_ntb *sndev,
 			       struct ntb_ctrl_regs __iomem *mmio_ctrl,
 			       int *req_ids, int count)
 {
-	int i, rc = 0;
+	int i, j, rc = 0;
+	int last;
+	int *cur_req_ids;
+	int req_id_table_size;
 	u32 error;
 	u32 proxy_id;
 
-	if (ioread16(&mmio_ctrl->req_id_table_size) < count) {
+	req_id_table_size = ioread16(&mmio_ctrl->req_id_table_size);
+	printk("req_id_table_size is %x\n", req_id_table_size);
+	cur_req_ids = kzalloc(sizeof(int) * req_id_table_size, GFP_KERNEL);
+	if (!cur_req_ids)
+		return -ENOMEM;
+
+	for (i = 0; i < ARRAY_SIZE(sndev->mmio_self_ctrl->req_id_table); i++) {
+		proxy_id = ioread32(&sndev->mmio_self_ctrl->req_id_table[i]);
+
+		if (!(proxy_id & NTB_CTRL_REQ_ID_EN))
+			break;
+
+		cur_req_ids[i] = proxy_id >> 16;
+	}
+
+	last = i;
+	if (req_id_table_size < (last + count)) {
 		dev_err(&sndev->stdev->dev,
 			"Not enough requester IDs available.\n");
-		return -EFAULT;
+		rc = -EFAULT;
+		goto free_and_exit;
 	}
 
 	rc = switchtec_ntb_part_op(sndev, mmio_ctrl,
 				   NTB_CTRL_PART_OP_LOCK,
 				   NTB_CTRL_PART_STATUS_LOCKED);
 	if (rc)
-		return rc;
+		goto free_and_exit;
 
 	iowrite32(NTB_PART_CTRL_ID_PROT_DIS,
 		  &mmio_ctrl->partition_ctrl);
 
 	for (i = 0; i < count; i++) {
-		iowrite32(req_ids[i] << 16 | NTB_CTRL_REQ_ID_EN,
-			  &mmio_ctrl->req_id_table[i]);
+		for (j = 0; j < last; j++) {
+			if (cur_req_ids[j] == req_ids[i])
+				break;
+		}
 
-		proxy_id = ioread32(&mmio_ctrl->req_id_table[i]);
+		if (j < last)
+			continue;
+
+		iowrite32(req_ids[i] << 16 | NTB_CTRL_REQ_ID_EN,
+			  &mmio_ctrl->req_id_table[last + i]);
+
+		proxy_id = ioread32(&mmio_ctrl->req_id_table[last + i]);
 		dev_dbg(&sndev->stdev->dev,
 			"Requester ID %02X:%02X.%X -> BB:%02X.%X\n",
 			req_ids[i] >> 8, (req_ids[i] >> 3) & 0x1F,
@@ -1038,7 +1066,9 @@ static int config_req_id_table(struct switchtec_ntb *sndev,
 			error);
 	}
 
-	return 0;
+free_and_exit:
+	kfree(cur_req_ids);
+	return rc;
 }
 
 static int crosslink_setup_mws(struct switchtec_ntb *sndev, int ntb_lut_idx,
