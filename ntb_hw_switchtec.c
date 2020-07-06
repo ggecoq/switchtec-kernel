@@ -996,31 +996,56 @@ static int config_rsvd_lut_win(struct switchtec_ntb *sndev,
 
 static int config_req_id_table(struct switchtec_ntb *sndev,
 			       struct ntb_ctrl_regs __iomem *mmio_ctrl,
-			       int *req_ids, int count)
+			       int *req_ids, int count, int override)
 {
-	int i, j, rc = 0;
+	int i, j, k, rc = 0;
 	int last;
 	int *cur_req_ids;
+	int *new_req_ids;
 	int req_id_table_size;
 	u32 error;
 	u32 proxy_id;
 
 	req_id_table_size = ioread16(&mmio_ctrl->req_id_table_size);
-	printk("req_id_table_size is %x\n", req_id_table_size);
+
 	cur_req_ids = kzalloc(sizeof(int) * req_id_table_size, GFP_KERNEL);
 	if (!cur_req_ids)
 		return -ENOMEM;
 
-	for (i = 0; i < ARRAY_SIZE(sndev->mmio_self_ctrl->req_id_table); i++) {
-		proxy_id = ioread32(&sndev->mmio_self_ctrl->req_id_table[i]);
-
-		if (!(proxy_id & NTB_CTRL_REQ_ID_EN))
-			break;
-
-		cur_req_ids[i] = proxy_id >> 16;
+	new_req_ids = kzalloc(sizeof(int) * count, GFP_KERNEL);
+	if (!new_req_ids) {
+		rc = -ENOMEM;
+		goto free_and_exit;
 	}
 
-	last = i;
+	if (!override) {
+		for (i = 0; i < ARRAY_SIZE(mmio_ctrl->req_id_table); i++) {
+			proxy_id = ioread32(&mmio_ctrl->req_id_table[i]);
+
+			if (!(proxy_id & NTB_CTRL_REQ_ID_EN))
+				break;
+
+			cur_req_ids[i] = proxy_id >> 16;
+		}
+		last = i;
+
+		k = 0;
+		for (i = 0; i < count; i++) {
+			for (j = 0; j < last; j++) {
+				if (cur_req_ids[j] == req_ids[i])
+					break;
+			}
+
+			if (j < last)
+				continue;
+			else
+				new_req_ids[k++] = req_ids[i];
+		}
+		count = k;
+	} else {
+		last = 0;
+	}
+
 	if (req_id_table_size < (last + count)) {
 		dev_err(&sndev->stdev->dev,
 			"Not enough requester IDs available.\n");
@@ -1038,14 +1063,6 @@ static int config_req_id_table(struct switchtec_ntb *sndev,
 		  &mmio_ctrl->partition_ctrl);
 
 	for (i = 0; i < count; i++) {
-		for (j = 0; j < last; j++) {
-			if (cur_req_ids[j] == req_ids[i])
-				break;
-		}
-
-		if (j < last)
-			continue;
-
 		iowrite32(req_ids[i] << 16 | NTB_CTRL_REQ_ID_EN,
 			  &mmio_ctrl->req_id_table[last + i]);
 
@@ -1069,7 +1086,10 @@ static int config_req_id_table(struct switchtec_ntb *sndev,
 	}
 
 free_and_exit:
-	kfree(cur_req_ids);
+	if (cur_req_ids)
+		kfree(cur_req_ids);
+	if (new_req_ids)
+		kfree(new_req_ids);
 	return rc;
 }
 
@@ -1155,7 +1175,7 @@ static int crosslink_setup_req_ids(struct switchtec_ntb *sndev,
 		req_ids[i] = ((proxy_id >> 1) & 0xFF);
 	}
 
-	return config_req_id_table(sndev, mmio_ctrl, req_ids, i);
+	return config_req_id_table(sndev, mmio_ctrl, req_ids, i, 1);
 }
 
 /*
@@ -1369,7 +1389,7 @@ switchtec_ntb_init_req_id_table(struct switchtec_ntb *sndev)
 	req_ids[1] = ioread16(&sndev->mmio_ntb->requester_id);
 
 	return config_req_id_table(sndev, sndev->mmio_self_ctrl, req_ids,
-				   ARRAY_SIZE(req_ids));
+				   ARRAY_SIZE(req_ids), 0);
 }
 
 static void switchtec_ntb_init_shared(struct switchtec_ntb *sndev)
@@ -1558,13 +1578,31 @@ struct ntb_sysfs_entry {
 
 static ssize_t requester_ids_show(struct switchtec_ntb *sndev, char *page)
 {
-	u32 perf_cfg = 0;
+	int i;
+	int req_id_table_size;
+	char req_id_str[32];
+	u32 req_id;
+	ssize_t n = 0;
 
-	return sprintf(page, "0x%x\n", perf_cfg);
+	req_id_table_size = ioread16(&sndev->mmio_self_ctrl->req_id_table_size);
+
+	for (i = 0; i < req_id_table_size; i++) {
+		req_id = ioread32(&sndev->mmio_self_ctrl->req_id_table[i]);
+
+		if (!(req_id & NTB_CTRL_REQ_ID_EN))
+			break;
+
+		req_id >>= 16;
+		n += sprintf(req_id_str, "Requester ID #%d: %02x:%02x.%x\n", i,
+			     (req_id >> 8), (req_id >> 3) & 0x1f, req_id & 0x7);
+		strcat(page, req_id_str);
+	}
+
+	return n;
 }
 
-static ssize_t requester_ids_store(struct switchtec_ntb *sndev, const char *page,
-				 size_t count)
+static ssize_t requester_ids_store(struct switchtec_ntb *sndev,
+				   const char *page, size_t count)
 {
 	int bus, dev, func;
 	int req_id;
@@ -1573,12 +1611,12 @@ static ssize_t requester_ids_store(struct switchtec_ntb *sndev, const char *page
 	if (sscanf(page, "%x:%x.%x", &bus, &dev, &func) != 3)
 		return -EINVAL;
 
-	if (bus > 0xff || dev > 0x1f || func > 8)
+	if ((bus > 0xff) || (dev > 0x1f) || (func > 8))
 		ret = -EINVAL;
 
-	req_id = (bus < 8) | (dev < 5) | func;
+	req_id = (bus << 8) | (dev << 3) | func;
 
-	ret = config_req_id_table(sndev, sndev->mmio_self_ctrl, &req_id, 1);
+	ret = config_req_id_table(sndev, sndev->mmio_self_ctrl, &req_id, 1, 0);
 	if (ret)
 		return ret;
 
